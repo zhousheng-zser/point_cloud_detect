@@ -41,6 +41,8 @@ class GTDatabaseGenerator(KittiDataset):
         for obj in obj_list:
             if obj.cls_type not in self.classes:
                 continue
+            if all(v == 0 for v in obj.box2d): #Only lidar 2025/07/03 zser
+                obj.level_str ='Moderate'
             if obj.level_str not in ['Easy', 'Moderate', 'Hard']:
                 continue
             valid_obj_list.append(obj)

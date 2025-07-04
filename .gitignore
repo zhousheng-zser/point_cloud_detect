@@ -2,7 +2,7 @@
 *.yaml
 *__pycache__*
 *_ext*
-/output
+/output*
 *.cu.o
 /data
 **/build
@@ -10,3 +10,4 @@
 **/*.egg-info
 **/dist
 tools/gt_database/
+.vs

@@ -41,7 +41,7 @@ parser.add_argument("--extra_tag", type=str, default='default', help="extra tag 
 parser.add_argument('--output_dir', type=str, default=None, help='specify an output directory if needed')
 parser.add_argument("--ckpt_dir", type=str, default=None, help="specify a ckpt directory to be evaluated if needed")
 
-parser.add_argument('--save_result', action='store_true', default=False, help='save evaluation results to files')
+parser.add_argument('--save_result', action='store_true', default=True, help='save evaluation results to files')
 parser.add_argument('--save_rpn_feature', action='store_true', default=False,
                     help='save features for separately rcnn training and evaluation')
 

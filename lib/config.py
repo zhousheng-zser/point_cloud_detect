@@ -23,6 +23,8 @@ __C.GT_AUG_RAND_NUM = False
 __C.GT_AUG_APPLY_PROB = 0.75
 __C.GT_AUG_HARD_RATIO = 0.6
 
+__C.USE_PLANE = True
+
 __C.PC_REDUCE_BY_RANGE = True
 __C.PC_AREA_SCOPE = np.array([[-40, 40],
                               [-1,   3],
@@ -184,7 +186,7 @@ def cfg_from_file(filename):
     """Load a config file and merge it into the default options."""
     import yaml
     with open(filename, 'r') as f:
-        yaml_cfg = edict(yaml.load(f))
+        yaml_cfg = edict(yaml.safe_load(f))
 
     _merge_a_into_b(yaml_cfg, __C)
 

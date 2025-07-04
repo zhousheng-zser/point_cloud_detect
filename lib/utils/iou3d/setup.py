@@ -1,6 +1,8 @@
+import os
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-
+os.environ["CC"] = "/usr/local/gcc-8.3.0/bin/gcc"
+os.environ["CXX"] = "/usr/local/gcc-8.3.0/bin/g++"
 setup(
     name='iou3d',
     ext_modules=[
