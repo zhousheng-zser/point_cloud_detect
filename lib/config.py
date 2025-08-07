@@ -23,8 +23,6 @@ __C.GT_AUG_RAND_NUM = False
 __C.GT_AUG_APPLY_PROB = 0.75
 __C.GT_AUG_HARD_RATIO = 0.6
 
-__C.USE_PLANE = True
-
 __C.PC_REDUCE_BY_RANGE = True
 __C.PC_AREA_SCOPE = np.array([[-40, 40],
                               [-1,   3],
@@ -180,6 +178,7 @@ __C.TEST.RPN_PRE_NMS_TOP_N = 9000
 __C.TEST.RPN_POST_NMS_TOP_N = 300
 __C.TEST.RPN_NMS_THRESH = 0.7
 __C.TEST.RPN_DISTANCE_BASED_PROPOSE = True
+__C.TEST.WARNING_ROI = np.array([-1000,-1000,-1000,2000,2000,2000,0], dtype=np.float32)
 
 
 def cfg_from_file(filename):
