@@ -70,7 +70,7 @@ def save_kitti_format(calib, bbox3d, scores, cfg_classes="Car"):
     
     for k in range(bbox3d.shape[0]):
         score = float(scores[k])
-        if score < 3.5 :
+        if score < 3 :
             continue
         x, z, ry = float(bbox3d[k, 0]), float(bbox3d[k, 2]), float(bbox3d[k, 6])
         beta = np.arctan2(z, x)
@@ -93,11 +93,7 @@ def save_kitti_format(calib, bbox3d, scores, cfg_classes="Car"):
         line = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
         result_lines.append(line)
 
-    result_lines_temp = result_lines.copy()
-    line_roi = f"{cfg_classes} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {cfg.TEST.WARNING_ROI[0]:.4f} {cfg.TEST.WARNING_ROI[1]:.4f} {cfg.TEST.WARNING_ROI[2]:.4f} {cfg.TEST.WARNING_ROI[3]:.4f} {cfg.TEST.WARNING_ROI[4]:.4f} {cfg.TEST.WARNING_ROI[5]:.4f} {cfg.TEST.WARNING_ROI[6]:.4f} {10.0:.4f}"
-    result_lines_temp.append(line_roi)
-
-    return '\n'.join(result_lines) ,'\n'.join(result_lines_temp)
+    return  result_lines
 
 """
 def save_kitti_format(calib, bbox3d, scores):
@@ -197,7 +193,6 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
 
     # scores thresh
     inds = norm_scores > cfg.RCNN.SCORE_THRESH
-
     for k in range(batch_size):
         cur_inds = inds[k].view(-1)
         if cur_inds.sum() == 0:
@@ -219,10 +214,14 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
         calib = dataset.get_calib()
         final_total += pred_boxes3d_selected.shape[0] ##  can del
         #image_shape = dataset.get_image_shape(cur_sample_id)
-        result_lines,result_lines_temp= save_kitti_format( calib, pred_boxes3d_selected, scores_selected)
-
+        result_lines= save_kitti_format( calib, pred_boxes3d_selected, scores_selected)
+    
+    result_lines_temp = result_lines.copy()
+    line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {cfg.TEST.WARNING_ROI[0]:.4f} {cfg.TEST.WARNING_ROI[1]:.4f} {cfg.TEST.WARNING_ROI[2]:.4f} {cfg.TEST.WARNING_ROI[3]:.4f} {cfg.TEST.WARNING_ROI[4]:.4f} {cfg.TEST.WARNING_ROI[5]:.4f} {cfg.TEST.WARNING_ROI[6]:.4f} {10.0:.4f}"
+    result_lines_temp.append(line_roi)
+    #'\n'.join(result_lines) ,'\n'.join(result_lines_temp)
     #logger.info('------------ END  ------------' )
-    return process_point_cloud_with_3d_boxes(points, result_lines_temp, calib_path='./cfgs/calib.txt') , result_lines
+    return process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt') , '\n'.join(result_lines)
     #return result_lines
 
 

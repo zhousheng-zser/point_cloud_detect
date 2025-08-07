@@ -23,12 +23,15 @@ def load_config():
         config = {}
 
 class PointCloudDataStruct:
-    def __init__(self, unique_id, length, width, height,
+    def __init__(self, unique_id, length, width, height,centre_length,centre_width,centre_height,
                  coordinate_system="ECEF", sensor_type="LiDAR", bin_data=None):
         self.unique_id = unique_id
         self.length = length
         self.width = width
         self.height = height
+        self.centre_length = centre_length
+        self.centre_width = centre_width
+        self.centre_height = centre_height
         self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.coordinate_system = coordinate_system
         self.sensor_type = sensor_type
@@ -52,6 +55,8 @@ global_lock = threading.Lock()
 
 def send_PointCloud_Data_Interface(point_cloud_data: PointCloudDataStruct):
     unique_id = point_cloud_data.unique_id
+    print("point_cloud_data  = " , point_cloud_data.length,point_cloud_data.width,point_cloud_data.height )
+    print("unique_id  = " , unique_id )
     with global_lock:
         if len(pointcloud_data_dict) >= MAX_SIZE:
             pointcloud_data_dict.popitem(last=False)
@@ -73,14 +78,16 @@ def async_forward_to_other_service(data: PointCloudDataStruct):
         radar_points = [list(point) for point in data.bin_data]
 
         payload = {
-            "vehicle_width": int(data.width),
-            "vehicle_height": int(data.height),
-            "vehicle_length": int(data.length),
+            "vehicle_width": data.width,
+            "vehicle_height": data.height,
+            "vehicle_length": data.length,
+            "vehicle_centre_width": data.centre_width,
+            "vehicle_centre_height": data.centre_height,
+            "vehicle_centre_length": data.centre_length,
             "vehicle_serial_number": int(data.unique_id),
             "vehicle_detect_time": data.timestamp,
             "vehicle_radar_points": radar_points
         }
-
         try:
             response = requests.post(forward_url, json=payload, timeout=2)
             print(f"[FORWARD] Sent to {forward_url} - status: {response.status_code}")
@@ -94,7 +101,7 @@ app = Flask(__name__)
 @app.route('/pointcloud/detect', methods=['POST'])
 def handle_point_cloud_request():
     data = request.get_json()
-
+    print("data: ", data)
     if not data or data.get("req_type") != "get_point_cloud_detect_request":
         return jsonify({
             "ret_type": "get_point_cloud_detect_response",

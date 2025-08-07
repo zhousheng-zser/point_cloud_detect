@@ -220,15 +220,16 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
     
 
     if points.shape[1] >= 4:
-        points[:, 3] = 0.0
+        pass  
+        #points[:, 3] = 0.0    #2025/08/04 zser
     elif points.shape[1] == 3:
         zeros_column = np.zeros((points.shape[0], 1))
         points = np.column_stack((points, zeros_column))
 
     for o in range(len(df)):
-        rgb = 2.0
+        rgb = -2.0
         if o == len(df) - 1:
-            rgb = 1.0
+            rgb = -1.0
         corners_3d_cam2 = compute_3d_box_cam2(*df.loc[o, ['height', 'width', 'length', 'pos_x', 'pos_y', 'pos_z', 'rot_y']])
         corners_3d_velo = calib.project_rect_to_velo(corners_3d_cam2.T)
         
@@ -271,9 +272,14 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
 
     #final_size = points.nbytes
     #print(f"final_size: {final_size} byte  ({final_size/1024/1024:.2f} MB)")
-    #current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    #print(f"test_Lidar_{current_time}.txt")
-    #np.savetxt('../csv_to_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points)
+    points = np.round(points, 3)
+    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"test_Lidar_{current_time}.txt")
+    if len(df) > 1 :
+        np.savetxt('../detect_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
+        #pass
+    else :    
+        np.savetxt('../train/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
     return points
 
 if __name__ == '__main__':
