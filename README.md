@@ -3,7 +3,10 @@
 ## PointRCNN: 3D Object Proposal Generation and Detection from Point Cloud
 (原项目 模型训练 论文相关)->[传输门](https://github.com/sshaoshuai/PointRCNN)
 
+# 魔改的目的就是为了能使用纯雷达检测,不再需要相机和校准文件
 
+# 同时还魔改一个标注工具,也是不需要相机和校准文件
+  能生成KITTI格式的标签文件 [labelCloud](https://github.com/zhousheng-zser/labelCloud)
 
 ## 部署环境Linux:
 ### Red Hat/CentOS 7​​
