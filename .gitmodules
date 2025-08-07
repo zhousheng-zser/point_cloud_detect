@@ -1,4 +1,4 @@
-[submodule "pointnet2_lib"]
-	path = pointnet2_lib
-	url = https://github.com/sshaoshuai/Pointnet2.PyTorch.git
+[submodule "HesaiLidar_SDK_2.0"]
+	path = HesaiLidar_SDK_2.0
+	url = https://github.com/zhousheng-zser/HesaiLidar_SDK_2.0.git
     ignore=dirty
