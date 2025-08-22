@@ -22,8 +22,10 @@ class FurthestPointSampling(Function):
         assert xyz.is_contiguous()
 
         B, N, _ = xyz.size()
-        output = torch.cuda.IntTensor(B, npoint)
-        temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
+        #output = torch.cuda.IntTensor(B, npoint)
+        #temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
+        output = torch.zeros((B, npoint), dtype=torch.int32, device='cuda')
+        temp = torch.full((B, N), 1e10, dtype=torch.float32, device='cuda')
 
         pointnet2.furthest_point_sampling_wrapper(B, N, npoint, xyz, temp, output)
         return output
@@ -52,7 +54,8 @@ class GatherOperation(Function):
 
         B, npoint = idx.size()
         _, C, N = features.size()
-        output = torch.cuda.FloatTensor(B, C, npoint)
+        #output = torch.cuda.FloatTensor(B, C, npoint)
+        output = torch.zeros((B, C, npoint), dtype=torch.float32, device='cuda')
 
         pointnet2.gather_points_wrapper(B, C, N, npoint, features, idx, output)
 
@@ -91,8 +94,10 @@ class ThreeNN(Function):
 
         B, N, _ = unknown.size()
         m = known.size(1)
-        dist2 = torch.cuda.FloatTensor(B, N, 3)
-        idx = torch.cuda.IntTensor(B, N, 3)
+        #dist2 = torch.cuda.FloatTensor(B, N, 3)
+        #idx = torch.cuda.IntTensor(B, N, 3)
+        dist2 = torch.empty((B, N, 3), dtype=torch.float32, device='cuda')
+        idx = torch.empty((B, N, 3), dtype=torch.int32, device='cuda')
 
         pointnet2.three_nn_wrapper(B, N, m, unknown, known, dist2, idx)
         return torch.sqrt(dist2), idx
@@ -125,7 +130,8 @@ class ThreeInterpolate(Function):
         B, c, m = features.size()
         n = idx.size(1)
         ctx.three_interpolate_for_backward = (idx, weight, m)
-        output = torch.cuda.FloatTensor(B, c, n)
+        #output = torch.cuda.FloatTensor(B, c, n)
+        output = torch.zeros((B, c, n), dtype=torch.float32, device='cuda')
 
         pointnet2.three_interpolate_wrapper(B, c, m, n, features, idx, weight, output)
         return output
@@ -169,7 +175,8 @@ class GroupingOperation(Function):
 
         B, nfeatures, nsample = idx.size()
         _, C, N = features.size()
-        output = torch.cuda.FloatTensor(B, C, nfeatures, nsample)
+        #output = torch.cuda.FloatTensor(B, C, nfeatures, nsample)
+        output = torch.zeros((B, C, nfeatures, nsample), dtype=torch.float32, device='cuda')
 
         pointnet2.group_points_wrapper(B, C, N, nfeatures, nsample, features, idx, output)
 
@@ -215,7 +222,8 @@ class BallQuery(Function):
 
         B, N, _ = xyz.size()
         npoint = new_xyz.size(1)
-        idx = torch.cuda.IntTensor(B, npoint, nsample).zero_()
+        #idx = torch.cuda.IntTensor(B, npoint, nsample).zero_()
+        idx = torch.zeros((B, npoint, nsample), dtype=torch.int32, device='cuda')
 
         pointnet2.ball_query_wrapper(B, N, npoint, radius, nsample, new_xyz, xyz, idx)
         return idx
