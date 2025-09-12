@@ -22,6 +22,7 @@ start_cmd3() {
     echo "Started CMD3, PID=$PID3"
 }
 
+echo 562144000 > /proc/sys/net/core/rmem_max
 start_cmd1
 start_cmd2
 start_cmd3

@@ -22,18 +22,30 @@ def compute_3d_box_cam2(h, w, l, x, y, z, yaw):
     return corners_3d_cam2
 
 
-def get_points_in_box(points, pts_intensity, height, width, length, pos_x, pos_y, pos_z, rot_y,
+def get_points_in_box(pts_lidar, height, width, length, pos_x, pos_y, pos_z, rot_y,
                           calib_path='./cfgs/calib.txt'):
+    pts_rect = pts_lidar[:, 0:3] 
+    pts_intensity = pts_lidar[:, 3]
+
+    if pts_rect is None or pts_rect.shape[0] == 0:
+        pts_valid_flag = np.array([], dtype=bool) 
+    else:
+        pts_valid_flag = np.ones(pts_rect.shape[0], dtype=bool)
+
+    pts_rect = pts_rect[pts_valid_flag][:, 0:3]
+    pts_intensity = pts_intensity[pts_valid_flag]
+
     calib = Calibration(calib_path)
 
     corners_3d_cam2 = compute_3d_box_cam2(height, width, length, pos_x, pos_y, pos_z, rot_y)
     corners_3d_velo = calib.project_rect_to_velo(corners_3d_cam2.T)
-    box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])
-    points_mask = points_in_convex_polygon_3d_jit(points[:, :3], box_surfaces)
+    box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])  #转为6个面  
+    points_mask = points_in_convex_polygon_3d_jit(pts_rect[:, :3], box_surfaces)
     mask = points_mask.reshape([-1])
-    points_in_box = points[mask]
 
+    points_in_box = pts_rect[mask]
     intensity_in_box = pts_intensity[mask]
+    pts_lidar[~mask, 3] = -3
 
     points_in_boxes = [points_in_box]
     intensity_in_boxes = [intensity_in_box]
@@ -43,7 +55,7 @@ def get_points_in_box(points, pts_intensity, height, width, length, pos_x, pos_y
         intensity_inside = np.concatenate(intensity_in_boxes, axis=0)
         return points_inside, intensity_inside
     else:
-        return points, pts_intensity
+        return pts_rect, pts_intensity
 
 class KittiRCNNDataset(KittiDataset):
     def __init__(self, root_dir, npoints=16384, split='train', classes='Car', mode='TRAIN', random_select=True,
@@ -222,22 +234,13 @@ class KittiRCNNDataset(KittiDataset):
         raise NotImplementedError
 
     def get_rpn_sample(self, pts_lidar):
-        pts_rect = pts_lidar[:, 0:3] 
-        pts_intensity = pts_lidar[:, 3]
 
-        if pts_rect is None or pts_rect.shape[0] == 0:
-            pts_valid_flag = np.array([], dtype=bool) 
-        else:
-            pts_valid_flag = np.ones(pts_rect.shape[0], dtype=bool)
-
-        pts_rect = pts_rect[pts_valid_flag][:, 0:3]
-        pts_intensity = pts_intensity[pts_valid_flag]
-
-        pts_rect,pts_intensity = get_points_in_box(pts_rect,pts_intensity, cfg.TEST.WARNING_ROI[0],cfg.TEST.WARNING_ROI[1],
+        pts_rect,pts_intensity = get_points_in_box(pts_lidar, cfg.TEST.WARNING_ROI[0],cfg.TEST.WARNING_ROI[1],
                                      cfg.TEST.WARNING_ROI[2],cfg.TEST.WARNING_ROI[3],cfg.TEST.WARNING_ROI[4],
                                      cfg.TEST.WARNING_ROI[5],cfg.TEST.WARNING_ROI[6],'./cfgs/calib.txt')
                                      
         calib = self.get_calib()
+        #雷达坐标转相机坐标     
         pts_rect = calib.lidar_to_rect(pts_rect)
 
         if self.npoints < len(pts_rect):

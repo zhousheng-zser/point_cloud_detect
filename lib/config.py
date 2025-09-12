@@ -179,6 +179,7 @@ __C.TEST.RPN_POST_NMS_TOP_N = 300
 __C.TEST.RPN_NMS_THRESH = 0.7
 __C.TEST.RPN_DISTANCE_BASED_PROPOSE = True
 __C.TEST.WARNING_ROI = np.array([-1000,-1000,-1000,2000,2000,2000,0], dtype=np.float32)
+__C.TEST.PLANES = np.array([0,-1,0,0,], dtype=np.float32)
 
 
 def cfg_from_file(filename):

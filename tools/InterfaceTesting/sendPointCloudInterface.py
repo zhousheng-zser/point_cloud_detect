@@ -76,7 +76,6 @@ def async_forward_to_other_service(data: PointCloudDataStruct):
             return
 
         radar_points = [list(point) for point in data.bin_data]
-
         payload = {
             "vehicle_width": data.width,
             "vehicle_height": data.height,
@@ -84,13 +83,13 @@ def async_forward_to_other_service(data: PointCloudDataStruct):
             "vehicle_centre_width": data.centre_width,
             "vehicle_centre_height": data.centre_height,
             "vehicle_centre_length": data.centre_length,
-            "vehicle_serial_number": int(data.unique_id),
+            "vehicle_serial_number": data.unique_id,
             "vehicle_detect_time": data.timestamp,
             "vehicle_radar_points": radar_points
         }
         try:
             response = requests.post(forward_url, json=payload, timeout=2)
-            print(f"[FORWARD] Sent to {forward_url} - status: {response.status_code}")
+            print(f"[FORWARD] Sent to {forward_url} - status: {response.status_code} text: {response.text} json: {response.json()}  ")
         except Exception as e:
             print(f"[FORWARD] Error sending to {forward_url} - {e}")
 
@@ -113,7 +112,12 @@ def handle_point_cloud_request():
         }), 400
 
     req_body = data.get("req_body", {})
-    unique_ids = req_body.get("unique_id")
+    unique_ids_ = req_body.get("unique_id")
+    time_str  = req_body.get("EventDetectTime") 
+    dt_obj = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+    unique_ids = unique_ids_ + "_" + str(int(dt_obj.timestamp()))
+    print("unique_ids: ", unique_ids )
+
     if isinstance(unique_ids, str):
         unique_ids = [unique_ids]
 

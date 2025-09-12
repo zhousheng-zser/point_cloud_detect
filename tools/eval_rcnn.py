@@ -5,11 +5,12 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from lib.net.point_rcnn import PointRCNN
-from lib.datasets.kitti_rcnn_dataset import KittiRCNNDataset
+from lib.datasets.kitti_rcnn_dataset import KittiRCNNDataset, compute_3d_box_cam2
 import tools.train_utils.train_utils as train_utils
 from lib.utils.bbox_transform import decode_bbox_target
 from tools.kitti_object_eval_python.evaluate import evaluate as kitti_evaluate
 from tools.draw_meshlab import process_point_cloud_with_3d_boxes
+from tools.draw_kitti_util import corner_to_surfaces_3d_jit,points_in_convex_polygon_3d_jit
 
 from lib.config import cfg, cfg_from_file, save_config_to_file, cfg_from_list
 import argparse
@@ -65,7 +66,58 @@ def create_logger(log_file):
     logging.getLogger(__name__).addHandler(console)
     return logging.getLogger(__name__)
 
-def save_kitti_format(calib, bbox3d, scores, cfg_classes="Car"):
+def rot_y_matrix(angle):
+    """标准的绕 Y 轴旋转矩阵 R_y(angle)（右手规则）"""
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return np.array([
+        [ c, 0,  s],
+        [ 0, 1,  0],
+        [-s, 0,  c]
+    ])
+
+
+def compute_min_box_with_rot(points_in_box, rot_y):
+    a, b, c, d = cfg.TEST.PLANES[0], cfg.TEST.PLANES[1], cfg.TEST.PLANES[2], cfg.TEST.PLANES[3]
+    y_ = -(a * points_in_box[0][0] + c * points_in_box[0][2] + d) / b
+    pts = points_in_box[:, :3].astype(np.float64)
+    if pts.shape[0] == 0:
+        return None
+
+    # Step1: 点云转局部坐标系 (对齐 rot_y)
+    R_world2local = rot_y_matrix(-rot_y)
+    pts_local = (R_world2local @ pts.T).T
+
+    x_min, y_min, z_min = pts_local.min(axis=0)
+    x_max, y_max, z_max = pts_local.max(axis=0)
+    y_max = y_ 
+
+    length = float(x_max - x_min)
+    height = float(y_max - y_min)
+    width  = float(z_max - z_min)
+
+    # 中心的 x,z 用 local 中心再变换回 global（几何中心）
+    cx_local = (x_min + x_max) / 2.0
+    cy_local = (y_min + y_max) / 2.0
+    cz_local = (z_min + z_max) / 2.0
+
+    # Step6: location (底部中心，KITTI 语义)
+    center_global = (R_world2local.T @ np.array([cx_local, cy_local, cz_local]))
+    kitti_loc = center_global.copy()
+    kitti_loc[1] += height / 2.0
+    return height, width, length, kitti_loc[0], kitti_loc[1], kitti_loc[2], rot_y
+
+
+def Calib_3d_box(pts_unique, height, width, length, pos_x, pos_y, pos_z, rot_y):
+    corners_3d_cam2 = compute_3d_box_cam2(height, width, length, pos_x, pos_y, pos_z, rot_y)
+    corners_3d_velo = corners_3d_cam2.T
+    box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])
+    points_mask = points_in_convex_polygon_3d_jit(pts_unique[:, :3], box_surfaces)
+    mask = points_mask.reshape([-1])
+    points_in_box = pts_unique[mask]  #筛选点云中属于ROI框的点
+    return compute_min_box_with_rot(points_in_box,rot_y)
+
+def save_kitti_format(pts_unique,calib, bbox3d, scores, cfg_classes="Car"):
     result_lines = []
     
     for k in range(bbox3d.shape[0]):
@@ -73,8 +125,8 @@ def save_kitti_format(calib, bbox3d, scores, cfg_classes="Car"):
         if score < 3 :
             continue
         x, z, ry = float(bbox3d[k, 0]), float(bbox3d[k, 2]), float(bbox3d[k, 6])
-        beta = np.arctan2(z, x)
-        alpha = -np.sign(beta) * np.pi / 2 + beta + ry
+        #beta = np.arctan2(z, x)
+        #alpha = -np.sign(beta) * np.pi / 2 + beta + ry
         
         h, w, l = float(bbox3d[k, 3]), float(bbox3d[k, 4]), float(bbox3d[k, 5])
         x, y, z = float(bbox3d[k, 0]), float(bbox3d[k, 1]), float(bbox3d[k, 2])
@@ -85,47 +137,21 @@ def save_kitti_format(calib, bbox3d, scores, cfg_classes="Car"):
         bbox_top = 0.0    
         bbox_right = 0.0  
         bbox_bottom = 0.0 
-        car_x = x - w/2
-        car_y = y - h/2
-        car_z = z - l/2
-        car = (car_x, car_y, car_z, w, h, l)
-
-        line = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
-        result_lines.append(line)
+        # car_x = x - w/2
+        # car_y = y - h/2
+        # car_z = z - l/2
+        # car = (car_x, car_y, car_z, w, h, l)
+        #line = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
+        #result_lines.append(line)
+        h, w, l, x, y, z, ry = Calib_3d_box(pts_unique, h, w, l, x, y, z, ry )
+        beta = np.arctan2(z, x)
+        alpha = -np.sign(beta) * np.pi / 2 + beta + ry
+        line_new = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
+        result_lines.append(line_new)
+        
 
     return  result_lines
 
-"""
-def save_kitti_format(calib, bbox3d, scores):
-    class KittiObject:
-        def __init__(self, class_name, alpha, dimensions, location, rotation, score):
-            self.class_name = class_name
-            self.alpha = alpha
-            self.dimensions = dimensions  # [h, w, l]
-            self.location = location  # [x, y, z]
-            self.rotation = rotation
-            self.score = score
-        
-    result_lines = []
-    for k in range(bbox3d.shape[0]):
-        x, z, ry = bbox3d[k, 0], bbox3d[k, 2], bbox3d[k, 6]
-        beta = np.arctan2(z, x)
-        alpha = -np.sign(beta) * np.pi / 2 + beta + ry
-        
-        kitti_obj = KittiObject(
-            class_name=cfg.CLASSES,
-            alpha=alpha,
-            dimensions=[bbox3d[k, 3], bbox3d[k, 4], bbox3d[k, 5]],
-            location=[bbox3d[k, 0], bbox3d[k, 1], bbox3d[k, 2]],
-            rotation=bbox3d[k, 6],
-            score=scores[k]
-        )
-        
-        result_lines.append(kitti_obj)
-    
-    return result_lines
-"""
- 
 def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=False):
     result_lines=[]
     if points is None or len(points) == 0 or points.size == 0:
@@ -143,8 +169,22 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
     final_total = total_cls_acc = total_cls_acc_refined = total_rpn_iou = 0
     data = dataset.get_rpn_sample(points)
     #logger.info('------------ BEGIN  ------------' )
-    pts_rect, pts_features, pts_input = \
-        data['pts_rect'], data['pts_features'], data['pts_input']
+    pts_input = data['pts_input']
+    # ############求地面
+    # import open3d as o3d
+    # pcd = o3d.geometry.PointCloud()
+    # pcd.points = o3d.utility.Vector3dVector(pts_input)
+    # plane_model, inliers = pcd.segment_plane(
+    #     distance_threshold=0.05,  # 内点距离阈值（单位：米）
+    #     ransac_n=3,  # 每次采样3个点
+    #     num_iterations=100000  # 迭代次数
+    # )
+    # a, b, c, d = plane_model
+    # if b > 0:
+    #     plane_model =  -plane_model
+    #     a, b, c, d = plane_model
+    # print("a, b, c, d : ", a, b, c, d)
+
     #batch_size = len(sample_id)
     batch_size = 1    
     inputs = torch.from_numpy(pts_input).cuda(non_blocking=True).float()
@@ -153,6 +193,15 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
 
     # model inference
     ret_dict = model(input_data)
+    pts_unique = [list(pt) for pt in set(map(tuple, pts_input))]  #车道点云去重 
+    #去地面
+    a, b, c, d = cfg.TEST.PLANES[0], cfg.TEST.PLANES[1], cfg.TEST.PLANES[2], cfg.TEST.PLANES[3]
+    
+    denom = np.sqrt(a*a + b*b + c*c)
+    distances = np.abs(pts_input @ np.array([a, b, c]) + d) / denom
+    # 假设距离阈值 0.2m
+    mask = distances > 0.03
+    pts_unique = pts_input[mask]
 
     roi_scores_raw = ret_dict['roi_scores_raw']  # (B, M)
     roi_boxes3d = ret_dict['rois']  # (B, M, 7)
@@ -214,7 +263,7 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
         calib = dataset.get_calib()
         final_total += pred_boxes3d_selected.shape[0] ##  can del
         #image_shape = dataset.get_image_shape(cur_sample_id)
-        result_lines= save_kitti_format( calib, pred_boxes3d_selected, scores_selected)
+        result_lines= save_kitti_format(pts_unique,calib, pred_boxes3d_selected, scores_selected)
     
     result_lines_temp = result_lines.copy()
     line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {cfg.TEST.WARNING_ROI[0]:.4f} {cfg.TEST.WARNING_ROI[1]:.4f} {cfg.TEST.WARNING_ROI[2]:.4f} {cfg.TEST.WARNING_ROI[3]:.4f} {cfg.TEST.WARNING_ROI[4]:.4f} {cfg.TEST.WARNING_ROI[5]:.4f} {cfg.TEST.WARNING_ROI[6]:.4f} {10.0:.4f}"
@@ -270,6 +319,7 @@ def create_dataloader(data_path, batch_size=1, workers=4, logger=None, test_mode
     logger.info('---- rcnn_eval_feature_dir: %s ' % rcnn_eval_feature_dir)
     logger.info('---- classes: %s ' % cfg.CLASSES)
     logger.info('---- Warning_roi: %s ' % cfg.TEST.WARNING_ROI)
+    logger.info('---- Planes: %s ' % cfg.TEST.PLANES)
  
     test_set = KittiRCNNDataset(root_dir=data_path, npoints=cfg.RPN.NUM_POINTS, split=cfg.TEST.SPLIT, mode=mode,
                                 random_select=random_select,

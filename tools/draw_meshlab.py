@@ -274,12 +274,13 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
     #print(f"final_size: {final_size} byte  ({final_size/1024/1024:.2f} MB)")
     points = np.round(points, 3)
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    print(f"test_Lidar_{current_time}.txt")
+    #print(f"test_Lidar_{current_time}.txt")
     if len(df) > 1 :
-        np.savetxt('../detect_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
-        #pass
+        #np.savetxt('../detect_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
+        pass
     else :    
-        np.savetxt('../train/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
+        #np.savetxt('../train/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
+        pass
     return points
 
 if __name__ == '__main__':
