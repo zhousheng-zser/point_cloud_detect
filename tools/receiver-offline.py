@@ -9,7 +9,7 @@ import datetime
 from eval_rcnn import PointCloudConverter
 
 def save_lidar_data_as_pcd(points):
-    output_dir = '../csv_to_clouds'
+    output_dir = '../detect_clouds'
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate timestamp for filename
