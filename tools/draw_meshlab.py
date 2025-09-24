@@ -199,7 +199,7 @@ def process_detection(data, filter_type='Car'):
 
 def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/calib.txt'):
     calib = Calibration(calib_path)
-    
+    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     if result_lines is None or result_lines == '' or result_lines == []:
         df=[]
     else :
@@ -273,12 +273,11 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
     #final_size = points.nbytes
     #print(f"final_size: {final_size} byte  ({final_size/1024/1024:.2f} MB)")
     points = np.round(points, 3)
-    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     #print(f"test_Lidar_{current_time}.txt")
-    if len(df) > 1 :
+    if len(df) > 1:
         #np.savetxt('../detect_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
         pass
-    else :    
+    else:    
         #np.savetxt('../train/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
         pass
     return points
@@ -286,6 +285,6 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
 if __name__ == '__main__':
     result_lines = "Car -1 -1 1.1270 0.0000 0.0000 0.0000 0.0000 20.0 10.0 50.00 -2.5 5.7 36.0 1.6 10.0"
     import open3d as o3d
-    pcd = o3d.io.read_point_cloud("./cloud_000000000000.pcd")
+    pcd = o3d.io.read_point_cloud("./test.pcd")
     points = np.asarray(pcd.points)
     process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/calib.txt')

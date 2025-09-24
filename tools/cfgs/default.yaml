@@ -165,8 +165,9 @@ TEST:
     RPN_NMS_THRESH: 0.8
     RPN_DISTANCE_BASED_PROPOSE: True
     #WARNING_ROI : [20.0 ,8.0 ,50.00 ,-2.5 ,5.7 ,36.0 ,1.6] 
-    WARNING_ROI : [10.0 ,5.0 ,25.00 ,-4.5 ,10 ,28.5 ,1.6] #1111
-    #WARNING_ROI : [10.0 ,5.0 ,40.00 ,-4.5 ,10 ,36.0 ,1.6] #1111
+    WARNING_ROI : [10.0 ,10.0 ,25.00 ,-2 ,10 ,28.5 ,1.6] #1111
+
+    ROADS_ROI: [[10.0 ,5.0 ,25.00 ,-4.5 ,10 ,28.5 ,1.6], [10.0 ,5.0 ,25.00 ,0.5 ,10 ,28.5 ,1.6]]
     #WARNING_ROI : [10.0 ,5.0 ,50.00 ,0.5 ,10 ,36.0 ,1.6] #2222
     #Height,width,length,left right,up down,front back,z-rotation
     PLANES : [-0.0123041, -0.999923, -0.001535, 6.98931]

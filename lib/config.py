@@ -179,6 +179,7 @@ __C.TEST.RPN_POST_NMS_TOP_N = 300
 __C.TEST.RPN_NMS_THRESH = 0.7
 __C.TEST.RPN_DISTANCE_BASED_PROPOSE = True
 __C.TEST.WARNING_ROI = np.array([-1000,-1000,-1000,2000,2000,2000,0], dtype=np.float32)
+__C.TEST.ROADS_ROI = np.array([[10.0 ,5.0 ,25.00 ,-4.5 ,10 ,28.5 ,1.6],[10.0 ,5.0 ,25.00 ,0.5 ,10 ,28.5 ,1.6]], dtype=np.float32)
 __C.TEST.PLANES = np.array([0,-1,0,0,], dtype=np.float32)
 
 

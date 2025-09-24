@@ -117,9 +117,19 @@ def Calib_3d_box(pts_unique, height, width, length, pos_x, pos_y, pos_z, rot_y):
     points_in_box = pts_unique[mask]  #筛选点云中属于ROI框的点
     return compute_min_box_with_rot(points_in_box,rot_y)
 
-def save_kitti_format(pts_unique,calib, bbox3d, scores, cfg_classes="Car"):
+
+def get_in_box(pts_lidar, height, width, length, pos_x, pos_y, pos_z, rot_y):
+    corners_3d_cam2 = compute_3d_box_cam2(height, width, length, pos_x, pos_y, pos_z, rot_y)
+    corners_3d_velo = corners_3d_cam2.T
+    box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])
+    points_mask = points_in_convex_polygon_3d_jit(pts_lidar[:, :3], box_surfaces)
+    mask = points_mask.reshape([-1])
+    return mask 
+
+def save_kitti_format(points, pts_unique, bbox3d, scores, cfg_classes="Car"):
     result_lines = []
-    
+    road_list =[]
+    in_box_list=[]
     for k in range(bbox3d.shape[0]):
         score = float(scores[k])
         if score < 3 :
@@ -143,17 +153,36 @@ def save_kitti_format(pts_unique,calib, bbox3d, scores, cfg_classes="Car"):
         # car = (car_x, car_y, car_z, w, h, l)
         #line = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
         #result_lines.append(line)
+        
+        #获取最小外接贴地长方体
         h, w, l, x, y, z, ry = Calib_3d_box(pts_unique, h, w, l, x, y, z, ry )
+        #获取在长方体内的点云
+        in_box_list.append(get_in_box(points, h, w, l, x, y, z, ry))
+        #生成新的KITTI数据
         beta = np.arctan2(z, x)
         alpha = -np.sign(beta) * np.pi / 2 + beta + ry
         line_new = f"{cfg_classes} {truncated} {occluded} {alpha:.4f} {bbox_left:.4f} {bbox_top:.4f} {bbox_right:.4f} {bbox_bottom:.4f} {h:.4f} {w:.4f} {l:.4f} {x:.4f} {y:.4f} {z:.4f} {ry:.4f} {score:.4f}"
         result_lines.append(line_new)
+        road_id = -1
+        for i, roi in enumerate(cfg.TEST.ROADS_ROI):
+            left = roi[3] - roi[1] / 2
+            right = roi[3] + roi[1] / 2
+            if left <= x < right: 
+                road_id = i
+                break
         
+        road_list.append(road_id)
 
-    return  result_lines
+    #标记每个长发体框内的点云   
+    result_mask  = np.zeros(len(points), dtype=bool)
+    for mask in in_box_list:
+        result_mask = np.logical_or(result_mask, mask)
+
+    return  result_lines,result_mask,road_list
 
 def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=False):
     result_lines=[]
+    road_list =[]
     if points is None or len(points) == 0 or points.size == 0:
         logger.info('---- Warning points is NULL ----------------')
         return result_lines
@@ -170,7 +199,7 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
     data = dataset.get_rpn_sample(points)
     #logger.info('------------ BEGIN  ------------' )
     pts_input = data['pts_input']
-    # ############求地面
+    # ############求地
     # import open3d as o3d
     # pcd = o3d.geometry.PointCloud()
     # pcd.points = o3d.utility.Vector3dVector(pts_input)
@@ -263,14 +292,16 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
         calib = dataset.get_calib()
         final_total += pred_boxes3d_selected.shape[0] ##  can del
         #image_shape = dataset.get_image_shape(cur_sample_id)
-        result_lines= save_kitti_format(pts_unique,calib, pred_boxes3d_selected, scores_selected)
-    
+        result_lines ,result_mask, road_list= save_kitti_format(calib.project_velo_to_ref(points[:, 0:3]), pts_unique, pred_boxes3d_selected, scores_selected)
+        #长发体框外的点云全为-3   
+        points[~result_mask, 3] = -3
+
     result_lines_temp = result_lines.copy()
     line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {cfg.TEST.WARNING_ROI[0]:.4f} {cfg.TEST.WARNING_ROI[1]:.4f} {cfg.TEST.WARNING_ROI[2]:.4f} {cfg.TEST.WARNING_ROI[3]:.4f} {cfg.TEST.WARNING_ROI[4]:.4f} {cfg.TEST.WARNING_ROI[5]:.4f} {cfg.TEST.WARNING_ROI[6]:.4f} {10.0:.4f}"
     result_lines_temp.append(line_roi)
     #'\n'.join(result_lines) ,'\n'.join(result_lines_temp)
     #logger.info('------------ END  ------------' )
-    return process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt') , '\n'.join(result_lines)
+    return process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt') , '\n'.join(result_lines), road_list
     #return result_lines
 
 
@@ -319,6 +350,7 @@ def create_dataloader(data_path, batch_size=1, workers=4, logger=None, test_mode
     logger.info('---- rcnn_eval_feature_dir: %s ' % rcnn_eval_feature_dir)
     logger.info('---- classes: %s ' % cfg.CLASSES)
     logger.info('---- Warning_roi: %s ' % cfg.TEST.WARNING_ROI)
+    logger.info('---- Roads_roi: %s ' % cfg.TEST.ROADS_ROI)
     logger.info('---- Planes: %s ' % cfg.TEST.PLANES)
  
     test_set = KittiRCNNDataset(root_dir=data_path, npoints=cfg.RPN.NUM_POINTS, split=cfg.TEST.SPLIT, mode=mode,
@@ -402,8 +434,8 @@ class PointCloudConverter:
             return "", ""
         with torch.no_grad():
             #results = eval_one_epoch_joint(points_test, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
-            results , result_lines= eval_one_epoch_joint(points, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
-            return results, result_lines
+            results , result_lines , road_list= eval_one_epoch_joint(points, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
+            return results, result_lines, road_list
 
 
 # def evaluate_point_rcnn(cfg_file='cfgs/default.yaml', set_cfgs=None, ckpt='PointRCNN.pth', rpn_ckpt=None......

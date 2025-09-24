@@ -12,13 +12,14 @@ from Tracking import MultiObjectTracker
 import hsai_sdk_wrapper_python as hsai
 from InterfaceTesting.sendPointCloudInterface import PointCloudDataStruct, send_PointCloud_Data_Interface,start_pointcloud_server
 
-app = Flask(__name__)
+app1 = Flask("app1")
+app2 = Flask("app2")
 
 # Thread-safe queue with maximum length of 5
 points_queue = deque(maxlen=5)
 queue_lock = threading.Lock()
-status_point_cloud = 'Processing_completed'
-status_unique_id = ""
+status_point_cloud = {}
+status_unique_id = {}
 # Under_processing: Processing in progress
 # Processing_completed: Processing finished
 # Processing_request: Processing requested
@@ -33,7 +34,7 @@ def start_lidar():
         print(f"hsai error: {e}")
 
 def save_lidar_data_as_pcd(points):
-    output_dir = '../csv_to_clouds'
+    output_dir = '../detect_clouds'
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate timestamp for filename
@@ -131,7 +132,7 @@ def point_cloud_detect():
                 else:
                     time.sleep(0.1)
                     continue
-            results,result_lines = PointCloud.eval_one_epoch(latest_points)
+            results,result_lines,road_list = PointCloud.eval_one_epoch(latest_points)   ###后面可以改为请求来了再画图   
             if result_lines :
                 print(result_lines)
                 print("")
@@ -139,48 +140,59 @@ def point_cloud_detect():
                 parts = result_lines.split()
                 for i in range(len(parts)//16):
                     detections_frame.append([float(parts[i*16+13]),float(parts[i*16+11]),float(parts[i*16+12]),
-                                        float(parts[i*16+10]),float(parts[i*16+9]),float(parts[i*16+8]),float(parts[i*16+14]),0] )
+                                        float(parts[i*16+10]),float(parts[i*16+9]),float(parts[i*16+8]),float(parts[i*16+14]), road_list[i]  ] )
                 mot.update(detections_frame)
             
-            global status_point_cloud
-            if status_point_cloud == 'Processing_request':#请求来了
-                # Update status to processing
-                status_point_cloud = 'Under_processing' #处理
-                global status_unique_id
-                length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.get_length_width_height(0)
-                point_cloud_data = PointCloudDataStruct(unique_id = str(status_unique_id),length=length_, width=width_,height=height_,
-                            centre_length=centre_length_,centre_width=centre_width_,centre_height=centre_height_ ,bin_data = results )
-                
-                send_PointCloud_Data_Interface(point_cloud_data)
-                status_point_cloud = 'Processing_completed'  ##结束
+            global status_point_cloud ,status_unique_id
+            road_map={
+                8991: 0,
+                8992: 1 
+                }
+            for port, state in status_point_cloud.items():
+                if state == 'Processing_request':#请求来了
+                    # Update status to processing
+                    status_point_cloud[port] = 'Under_processing' #处理
+                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.get_length_width_height(road_map[port])
+                    point_cloud_data = PointCloudDataStruct(unique_id = str(status_unique_id[port]),length=length_, width=width_,height=height_,
+                                centre_length=centre_length_,centre_width=centre_width_,centre_height=centre_height_ ,bin_data = results )
+                    send_PointCloud_Data_Interface(point_cloud_data,road_map[port])
+                    status_point_cloud[port] = 'Processing_completed'  ##结束
 
         except Exception as e:
             save_lidar_data_as_pcd(latest_points)
             traceback.print_exc()
             print(f"Error in point_cloud_detect processing loop: {e}")
-            status_point_cloud = 'Processing_completed' 
+            for port, state in status_point_cloud.items():
+                status_point_cloud[port] = 'Processing_completed' 
             time.sleep(0.1) 
 
-@app.route('/s485', methods=['POST'])
-def handle_s485():
+@app1.route('/s485', methods=['POST'])
+def handle_s485_1():
+    return handle_s485_common(8991)
+
+@app2.route('/s485', methods=['POST'])
+def handle_s485_2():
+    return handle_s485_common(8992)
+    
+def handle_s485_common(port_name):
     try:
         # Get JSON data
         data = request.get_json()
         if not data:
-            return jsonify({"error": "No JSON data received"}), 400
+            return jsonify({"error": f"No JSON data received on {port_name}"}), 400
         if int(data["S485WeightMessage"]["VehicleStatus"]) != 1:
-            return jsonify({"warning": "VehicleStatus != 1"}), 200  #对于大车容易只有半截
-        print(f"Received data: {data}")
-        global status_point_cloud
-        global status_unique_id
-        while status_point_cloud == 'Processing_request': #进行中就一直等
+            return jsonify({"warning": f"VehicleStatus != 1 on {port_name}"}), 200  #对于大车容易只有半截
+
+        print(f"[{port_name}] Received data: {data}")
+        global status_point_cloud, status_unique_id
+        while status_point_cloud[port_name] == 'Processing_request': #进行中就一直等
             time.sleep(0.01)
         
-        status_point_cloud = 'Processing_request'
+        status_point_cloud[port_name] = 'Processing_request'
         time_str  = data["S485WeightMessage"]["EventDetectTime"]
         dt_obj = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
-        status_unique_id= data["S485WeightMessage"]["UniqueId"]+"_"+str(int(dt_obj.timestamp()))
-        print("ID",status_unique_id)
+        status_unique_id[port_name]= data["S485WeightMessage"]["UniqueId"]+"_"+str(int(dt_obj.timestamp()))
+        print(f"[{port_name}] ID = {status_unique_id}")
             
         # Print received data (for debugging)
         return jsonify({"Response": "OK"}), 200
@@ -189,18 +201,26 @@ def handle_s485():
         return jsonify({"error": str(e)}), 500
 
 
-def start_pointcloud_detect():
-    app.run(host='0.0.0.0', port=8991)
+def start_pointcloud_detect(app, port_number):
+    app.run(host='0.0.0.0', port=port_number)
 
 
 if __name__ == '__main__':
 
     start_lidar()
     start_thread_v1 = threading.Thread(target=start_pointcloud_server, kwargs={"host": "0.0.0.0", "port": 8100}, daemon=True)
-    start_thread_v2 = threading.Thread(target=start_pointcloud_detect, daemon=True)
+
+    
+    status_point_cloud[8991]="Processing_completed"
+    status_point_cloud[8992]="Processing_completed"
+    status_unique_id[8991] = ""
+    status_unique_id[8992] = ""
+    start_thread_road1 = threading.Thread(target=start_pointcloud_detect,args=(app1, 8991), daemon=True)
+    start_thread_road2 = threading.Thread(target=start_pointcloud_detect,args=(app2, 8992), daemon=True)
 
     start_thread_v1.start()
-    start_thread_v2.start()
+    start_thread_road1.start()
+    start_thread_road2.start()
     
     time.sleep(5) 
     detect_thread = threading.Thread(target=point_cloud_detect, daemon=True)

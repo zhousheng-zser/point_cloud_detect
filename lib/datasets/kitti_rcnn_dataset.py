@@ -22,42 +22,9 @@ def compute_3d_box_cam2(h, w, l, x, y, z, yaw):
     return corners_3d_cam2
 
 
-def get_points_in_box(pts_lidar, height, width, length, pos_x, pos_y, pos_z, rot_y,
-                          calib_path='./cfgs/calib.txt'):
-    pts_rect = pts_lidar[:, 0:3] 
-    pts_intensity = pts_lidar[:, 3]
-
-    if pts_rect is None or pts_rect.shape[0] == 0:
-        pts_valid_flag = np.array([], dtype=bool) 
-    else:
-        pts_valid_flag = np.ones(pts_rect.shape[0], dtype=bool)
-
-    pts_rect = pts_rect[pts_valid_flag][:, 0:3]
-    pts_intensity = pts_intensity[pts_valid_flag]
-
-    calib = Calibration(calib_path)
-
-    corners_3d_cam2 = compute_3d_box_cam2(height, width, length, pos_x, pos_y, pos_z, rot_y)
-    corners_3d_velo = calib.project_rect_to_velo(corners_3d_cam2.T)
-    box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])  #转为6个面  
-    points_mask = points_in_convex_polygon_3d_jit(pts_rect[:, :3], box_surfaces)
-    mask = points_mask.reshape([-1])
-
-    points_in_box = pts_rect[mask]
-    intensity_in_box = pts_intensity[mask]
-    pts_lidar[~mask, 3] = -3
-
-    points_in_boxes = [points_in_box]
-    intensity_in_boxes = [intensity_in_box]
-
-    if points_in_boxes:
-        points_inside = np.concatenate(points_in_boxes, axis=0)
-        intensity_inside = np.concatenate(intensity_in_boxes, axis=0)
-        return points_inside, intensity_inside
-    else:
-        return pts_rect, pts_intensity
 
 class KittiRCNNDataset(KittiDataset):
+    calib = Calibration('./cfgs/calib.txt')
     def __init__(self, root_dir, npoints=16384, split='train', classes='Car', mode='TRAIN', random_select=True,
                  logger=None, rcnn_training_roi_dir=None, rcnn_training_feature_dir=None, rcnn_eval_roi_dir=None,
                  rcnn_eval_feature_dir=None, gt_database_dir=None):
@@ -145,7 +112,7 @@ class KittiRCNNDataset(KittiDataset):
         return {}
 
     def get_calib(self):
-        return super().get_calib()
+        return KittiRCNNDataset.calib
 
     @staticmethod
     def get_rpn_features(rpn_feature_dir, idx):
@@ -233,15 +200,45 @@ class KittiRCNNDataset(KittiDataset):
     def __len__(self):
         raise NotImplementedError
 
+    def get_points_in_box(self, pts_lidar, height, width, length, pos_x, pos_y, pos_z, rot_y):
+        pts_rect = pts_lidar[:, 0:3] 
+        pts_intensity = pts_lidar[:, 3]
+
+        if pts_rect is None or pts_rect.shape[0] == 0:
+            pts_valid_flag = np.array([], dtype=bool) 
+        else:
+            pts_valid_flag = np.ones(pts_rect.shape[0], dtype=bool)
+
+        pts_rect = pts_rect[pts_valid_flag][:, 0:3]
+        pts_intensity = pts_intensity[pts_valid_flag]
+
+        corners_3d_cam2 = compute_3d_box_cam2(height, width, length, pos_x, pos_y, pos_z, rot_y)
+        corners_3d_velo = self.calib.project_rect_to_velo(corners_3d_cam2.T)
+        box_surfaces = corner_to_surfaces_3d_jit(corners_3d_velo[np.newaxis, ...])  #转为6个面  
+        points_mask = points_in_convex_polygon_3d_jit(pts_rect[:, :3], box_surfaces)
+        mask = points_mask.reshape([-1])
+
+        points_in_box = pts_rect[mask]
+        intensity_in_box = pts_intensity[mask]
+
+        points_in_boxes = [points_in_box]
+        intensity_in_boxes = [intensity_in_box]
+
+        if points_in_boxes:
+            points_inside = np.concatenate(points_in_boxes, axis=0)
+            intensity_inside = np.concatenate(intensity_in_boxes, axis=0)
+            return points_inside, intensity_inside
+        else:
+            return pts_rect, pts_intensity
+
     def get_rpn_sample(self, pts_lidar):
 
-        pts_rect,pts_intensity = get_points_in_box(pts_lidar, cfg.TEST.WARNING_ROI[0],cfg.TEST.WARNING_ROI[1],
+        pts_rect,pts_intensity = self.get_points_in_box(pts_lidar, cfg.TEST.WARNING_ROI[0],cfg.TEST.WARNING_ROI[1],
                                      cfg.TEST.WARNING_ROI[2],cfg.TEST.WARNING_ROI[3],cfg.TEST.WARNING_ROI[4],
-                                     cfg.TEST.WARNING_ROI[5],cfg.TEST.WARNING_ROI[6],'./cfgs/calib.txt')
+                                     cfg.TEST.WARNING_ROI[5],cfg.TEST.WARNING_ROI[6])
                                      
-        calib = self.get_calib()
         #雷达坐标转相机坐标     
-        pts_rect = calib.lidar_to_rect(pts_rect)
+        pts_rect = self.calib.project_velo_to_ref(pts_rect)
 
         if self.npoints < len(pts_rect):
             pts_depth = pts_rect[:, 2]
