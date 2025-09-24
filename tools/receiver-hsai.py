@@ -10,6 +10,7 @@ import traceback
 from eval_rcnn import PointCloudConverter
 from Tracking import MultiObjectTracker
 import hsai_sdk_wrapper_python as hsai
+from draw_meshlab import process_point_cloud_with_3d_boxes
 from InterfaceTesting.sendPointCloudInterface import PointCloudDataStruct, send_PointCloud_Data_Interface,start_pointcloud_server
 
 app1 = Flask("app1")
@@ -132,12 +133,13 @@ def point_cloud_detect():
                 else:
                     time.sleep(0.1)
                     continue
-            results,result_lines,road_list = PointCloud.eval_one_epoch(latest_points)   ###后面可以改为请求来了再画图   
-            if result_lines :
-                print(result_lines)
+            points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points) 
+            result_lines_= '\n'.join(result_lines)
+            if result_lines_ :
+                print(result_lines_)
                 print("")
                 detections_frame = []
-                parts = result_lines.split()
+                parts = result_lines_.split()
                 for i in range(len(parts)//16):
                     detections_frame.append([float(parts[i*16+13]),float(parts[i*16+11]),float(parts[i*16+12]),
                                         float(parts[i*16+10]),float(parts[i*16+9]),float(parts[i*16+8]),float(parts[i*16+14]), road_list[i]  ] )
@@ -152,10 +154,16 @@ def point_cloud_detect():
                 if state == 'Processing_request':#请求来了
                     # Update status to processing
                     status_point_cloud[port] = 'Under_processing' #处理
-                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.get_length_width_height(road_map[port])
+                    id_ = road_map[port]
+                    result_lines_temp = [line for line, road in zip(result_lines, road_list) if road == id_]
+                    line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {roads_roi[id_][0]:.4f} {roads_roi[id_][1]:.4f} {roads_roi[id_][2]:.4f} {roads_roi[id_][3]:.4f} {roads_roi[id_][4]:.4f} {roads_roi[id_][5]:.4f} {roads_roi[id_][6]:.4f} {10.0:.4f}"
+                    result_lines_temp.append(line_roi)
+                    results = process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt')
+
+                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.get_length_width_height(id_)
                     point_cloud_data = PointCloudDataStruct(unique_id = str(status_unique_id[port]),length=length_, width=width_,height=height_,
                                 centre_length=centre_length_,centre_width=centre_width_,centre_height=centre_height_ ,bin_data = results )
-                    send_PointCloud_Data_Interface(point_cloud_data,road_map[port])
+                    send_PointCloud_Data_Interface(point_cloud_data,id_)
                     status_point_cloud[port] = 'Processing_completed'  ##结束
 
         except Exception as e:

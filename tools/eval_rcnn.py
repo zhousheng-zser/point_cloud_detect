@@ -9,7 +9,6 @@ from lib.datasets.kitti_rcnn_dataset import KittiRCNNDataset, compute_3d_box_cam
 import tools.train_utils.train_utils as train_utils
 from lib.utils.bbox_transform import decode_bbox_target
 from tools.kitti_object_eval_python.evaluate import evaluate as kitti_evaluate
-from tools.draw_meshlab import process_point_cloud_with_3d_boxes
 from tools.draw_kitti_util import corner_to_surfaces_3d_jit,points_in_convex_polygon_3d_jit
 
 from lib.config import cfg, cfg_from_file, save_config_to_file, cfg_from_list
@@ -296,13 +295,7 @@ def eval_one_epoch_joint(points, model, dataloader, epoch_id, logger, test_mode=
         #长发体框外的点云全为-3   
         points[~result_mask, 3] = -3
 
-    result_lines_temp = result_lines.copy()
-    line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {cfg.TEST.WARNING_ROI[0]:.4f} {cfg.TEST.WARNING_ROI[1]:.4f} {cfg.TEST.WARNING_ROI[2]:.4f} {cfg.TEST.WARNING_ROI[3]:.4f} {cfg.TEST.WARNING_ROI[4]:.4f} {cfg.TEST.WARNING_ROI[5]:.4f} {cfg.TEST.WARNING_ROI[6]:.4f} {10.0:.4f}"
-    result_lines_temp.append(line_roi)
-    #'\n'.join(result_lines) ,'\n'.join(result_lines_temp)
-    #logger.info('------------ END  ------------' )
-    return process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt') , '\n'.join(result_lines), road_list
-    #return result_lines
+    return points,cfg.TEST.ROADS_ROI, result_lines, road_list
 
 
 def load_part_ckpt(model, filename, logger, total_keys=-1):
@@ -431,11 +424,10 @@ class PointCloudConverter:
     def eval_one_epoch(self,points):
         if points.shape[0] < 10000:
             self.logger.info('**********************Warning: points<10000 **********************')
-            return "", ""
+            return "", "","",""
         with torch.no_grad():
             #results = eval_one_epoch_joint(points_test, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
-            results , result_lines , road_list= eval_one_epoch_joint(points, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
-            return results, result_lines, road_list
+            return eval_one_epoch_joint(points, self.model, self.test_loader, self.epoch_id, self.logger, self.test_mode)
 
 
 # def evaluate_point_rcnn(cfg_file='cfgs/default.yaml', set_cfgs=None, ckpt='PointRCNN.pth', rpn_ckpt=None......
