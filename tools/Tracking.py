@@ -281,26 +281,32 @@ class MultiObjectTracker:
             results.append((trk.id, trk.get_state()))
         return results
 
-    def get_length_width_height(self, line):
-        length=999999999
-        width=999999999
-        height=999999999
-        centre_l=999999999
-        centre_w=999999999
-        centre_h=999999999
-        for trk in self.trackers :
-            val =trk.get_last_observation()
+    def pop_best_length_width_height(self, line):
+        length = 999999999
+        width = 999999999
+        height = 999999999
+        centre_l = 999999999
+        centre_w = 999999999
+        centre_h = 999999999
+        best_idx = -1 
+
+        for idx, trk in enumerate(self.trackers):
+            val = trk.get_last_observation()
             # [x,y,z,l,w,h,yaw,line]
-            if val[0]< centre_l and val[7] ==line :
+            if val[0] < centre_l and val[7] == line:
                 length   = val[3]
                 width    = val[4]
                 height   = val[5]
                 centre_l = val[0]
                 centre_w = val[1]
                 centre_h = val[2]
-        if centre_l==999999999:
-            return 0,0,0,0,0,0
-        return length,width,height,centre_l,centre_w,centre_h
+                best_idx = idx   # 记录下标
+
+        if best_idx == -1:  # 没找到
+            return 0, 0, 0, 0, 0, 0
+
+        del self.trackers[best_idx]
+        return length, width, height, centre_l, centre_w, centre_h
 
 
 # ==== Demo ====

@@ -97,25 +97,6 @@ async def collect_points_task():
             print(f"Error in collect_points_task: {e}")
         await asyncio.sleep(time_interval_ms/1000.0 *1.5)  
 
-# def get_length_width_height(result_lines):
-#     parts = result_lines.split()
-#     length = float(parts[10])
-#     width = float(parts[9])
-#     height = float(parts[8]) 
-#     centre_l = float(parts[13])
-#     centre_w =float(parts[11])
-#     centre_h = float(parts[12])
-
-#     for i in range(len(parts)//16):
-#         if float(parts[i*16+13])< centre_l:
-#             length   = float(parts[i*16+10])
-#             width    = float(parts[i*16+9])
-#             height   = float(parts[i*16+8])
-#             centre_l = float(parts[i*16+13])
-#             centre_w = float(parts[i*16+11])
-#             centre_h = float(parts[i*16+12])
-#     return length,width,height,centre_l,centre_w,centre_h
-
 def point_cloud_detect():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -133,7 +114,7 @@ def point_cloud_detect():
                 else:
                     time.sleep(0.1)
                     continue
-            points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points) 
+            points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points)   ###后面可以改为请求来了再画图   
             result_lines_= '\n'.join(result_lines)
             if result_lines_ :
                 print(result_lines_)
@@ -155,12 +136,14 @@ def point_cloud_detect():
                     # Update status to processing
                     status_point_cloud[port] = 'Under_processing' #处理
                     id_ = road_map[port]
+                    #result_lines_temp=result_lines.copy()
                     result_lines_temp = [line for line, road in zip(result_lines, road_list) if road == id_]
+
                     line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {roads_roi[id_][0]:.4f} {roads_roi[id_][1]:.4f} {roads_roi[id_][2]:.4f} {roads_roi[id_][3]:.4f} {roads_roi[id_][4]:.4f} {roads_roi[id_][5]:.4f} {roads_roi[id_][6]:.4f} {10.0:.4f}"
                     result_lines_temp.append(line_roi)
                     results = process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt')
 
-                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.get_length_width_height(id_)
+                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.pop_best_length_width_height(id_)
                     point_cloud_data = PointCloudDataStruct(unique_id = str(status_unique_id[port]),length=length_, width=width_,height=height_,
                                 centre_length=centre_length_,centre_width=centre_width_,centre_height=centre_height_ ,bin_data = results )
                     send_PointCloud_Data_Interface(point_cloud_data,id_)
