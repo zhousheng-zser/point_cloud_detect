@@ -7,6 +7,7 @@ class Tracker:
     def __init__(self, bbox3d, id, timestamp ,init_speed=0 ):
         """
         bbox3d: [x, y, z, l, w, h, yaw,line]
+        KF 只跟踪 [x, y, z, vx, vy, vz]
         """
         self.last_observation = np.array(bbox3d)
         self.id = id
@@ -16,52 +17,62 @@ class Tracker:
         self.last_timestamp = timestamp  # 毫秒时间戳
         self.popped = False  # 默认没被取过
 
+        # ========== 独立属性 ==========
+        self.length = bbox3d[3]
+        self.width  = bbox3d[4]
+        self.height = bbox3d[5]
+        self.yaw    = bbox3d[6]
+        self.line   = bbox3d[7]
+
         # ==== Kalman Filter ====
-        # 状态: [x, y, z, vx, vy, vz, l, w, h, yaw, vyaw, line]
-        # 11维
-        self.kf = KalmanFilter(dim_x=12, dim_z=8)
+        # 6维
+        self.kf = KalmanFilter(dim_x=6, dim_z=3)
         
         # 初始状态
-        self.kf.x[:3] = bbox3d[:3].reshape(3, 1)   # 位置
-        self.kf.x[6:9] = bbox3d[3:6].reshape(3, 1) # 尺寸
-        self.kf.x[9] = bbox3d[6]                   # yaw
-        self.kf.x[11] = bbox3d[7]                  # line
-        
+        self.kf.x[:3] = np.array(bbox3d[:3]).reshape(3,1)   # 位置
+        self.kf.P *= 10.0
+
         # 状态转移矩阵 F
-        self.kf.F = np.eye(12)
-        dt = 1.0
+        self.kf.F = np.eye(6)
         for i in range(3):
-            self.kf.F[i, i+3] = dt  # 位置由速度更新
-        self.kf.F[9, 10] = dt       # yaw 由角速度更新
+            self.kf.F[i, i+3] = 1.0  # 位置由速度更新
 
         # 观测矩阵 H
-        self.kf.H = np.zeros((8, 12))
-        self.kf.H[0, 0] = 1  # x
-        self.kf.H[1, 1] = 1  # y
-        self.kf.H[2, 2] = 1  # z
-        self.kf.H[3, 6] = 1  # l
-        self.kf.H[4, 7] = 1  # w
-        self.kf.H[5, 8] = 1  # h
-        self.kf.H[6, 9] = 1  # yaw
-        self.kf.H[7, 11] = 1  # line
+        H = np.zeros((3,6))
+        H[0,0] = H[1,1] = H[2,2] = 1
+        self.kf.H = H
 
         # 噪声
-        self.kf.P *= 10.   # 初始不确定性
-        self.kf.R *= 1.0   # 观测噪声
-        self.kf.Q *= 0.01  # 过程噪声
+        q_pos = 1e-3
+        q_vel = 1e-2
+        Q = np.zeros((6,6))
+        Q[0:3,0:3] = np.eye(3) * q_pos
+        Q[3:6,3:6] = np.eye(3) * q_vel
+        self.kf.Q = Q
 
-    def predict(self):
+        # 测量噪声 R
+        self.kf.R = np.eye(3) * 0.25
+
+    def predict(self, dt=0.1):
+        for i in range(3):
+            self.kf.F[i, i+3] = dt
         self.kf.predict()
         self.time_since_update += 1
         return self.get_state()
 
     def update(self, bbox3d, timestamp):
-        bbox3d = np.array(bbox3d).copy()
-        #长宽高取max 
-        bbox3d[3] = max(bbox3d[3], self.last_observation[3])  # l
-        bbox3d[4] = max(bbox3d[4], self.last_observation[4])  # w
-        bbox3d[5] = max(bbox3d[5], self.last_observation[5])  # h
-        #更新速度
+        bbox3d = np.array(bbox3d, dtype=float)
+        # KF 更新位置
+        self.kf.update(bbox3d[:3])
+
+        #长宽高取max
+        self.length = max(self.length, bbox3d[3])
+        self.width  = max(self.width, bbox3d[4])
+        self.height = max(self.height, bbox3d[5])
+        self.yaw  = bbox3d[6]
+        self.line = bbox3d[7]
+
+        #更新速度标量
         dt = (timestamp - self.last_timestamp) / 1000.0  # ms -> s
         if dt > 1e-6:
             dist = np.linalg.norm(bbox3d[:3] - self.last_observation[:3])
@@ -69,10 +80,8 @@ class Tracker:
             self.speed = dist / dt
         self.last_timestamp = timestamp
 
-        self.kf.update(bbox3d.reshape(-1, 1))
         self.time_since_update = 0
         self.hits += 1
-        self.last_observation = bbox3d
 
     def get_state(self):
         """
@@ -80,8 +89,8 @@ class Tracker:
         """
         state = self.kf.x.flatten()
         return np.array([state[0], state[1], state[2],
-                         state[6], state[7], state[8],
-                         state[9], state[11]])
+        self.length,self.width,self.height,self.yaw,self.line
+        ])
     def get_last_observation(self):
         """
         返回最近一次 update() 的观测值 [x,y,z,l,w,h,yaw,line]
@@ -233,7 +242,7 @@ class MultiObjectTracker:
         计算两个3D框的欧式距离 (你已有实现)
         b1, b2 = [x, y, z, l, w, h, yaw, line]
         """
-        if b1[7]!= b1[7]:
+        if b1[7]!= b2[7]:
             return 99999999
         dist = np.linalg.norm(np.array(b1[:3]) - np.array(b2[:3]))
         return dist
@@ -243,7 +252,11 @@ class MultiObjectTracker:
         detections: [[x,y,z,l,w,h,yaw,line], ...]
         """
         # Step 1: 预测
-        predicted_states = [trk.predict() for trk in self.trackers] 
+        predicted_states = [] 
+        for idx, trk in enumerate(self.trackers):
+            # === 用真实 dt 预测 ===
+            dt = max(1e-3, (timestamp - trk.last_timestamp) / 1000.0)
+            predicted_states.append(trk.predict(dt=dt))
 
         # Step 2: 构建代价矩阵 (欧氏距离)
         cost = np.zeros((len(self.trackers), len(detections)))
@@ -256,19 +269,16 @@ class MultiObjectTracker:
         matched, unmatched_trk, unmatched_det = [], [], []
         if len(self.trackers) > 0 and len(detections) > 0:
             row_idx, col_idx = linear_sum_assignment(cost)
+            assigned_trks = set()
+            assigned_dets = set()
             for i, j in zip(row_idx, col_idx):
                 if cost[i, j] <= self.dist_threshold:  #  距离 <= 距离阈值  
                     matched.append((i, j))
-                else:
-                    unmatched_trk.append(i)
-                    unmatched_det.append(j)
+                    assigned_trks.add(i)
+                    assigned_dets.add(j)
 
-            for i in range(len(self.trackers)):
-                if i not in row_idx:
-                    unmatched_trk.append(i)
-            for j in range(len(detections)):
-                if j not in col_idx:
-                    unmatched_det.append(j)
+            unmatched_trk = [i for i in range(len(self.trackers)) if i not in assigned_trks]
+            unmatched_det = [j for j in range(len(detections)) if j not in assigned_dets]
         else:
             unmatched_det = list(range(len(detections)))
             unmatched_trk = list(range(len(self.trackers)))
@@ -301,9 +311,9 @@ class MultiObjectTracker:
             val = trk.get_last_observation()
             # [x,y,z,l,w,h,yaw,line]
             if val[0] < centre_l and val[7] == line:
-                length   = val[3]
-                width    = val[4]
-                height   = val[5]
+                length   = trk.length
+                width    = trk.width
+                height   = trk.height
                 centre_l = val[0]
                 centre_w = val[1]
                 centre_h = val[2]
@@ -320,15 +330,55 @@ class MultiObjectTracker:
 # ==== Demo ====
 if __name__ == "__main__":
     import time
+    import random
     mot = MultiObjectTracker()
 
     t1 = int(time.time()*1000)
-    detections_frame1 = [[-5.07, 7.02, 34.29, 10.28, 2.90, 4.01, 1.60, 0]]
+    detections_frame1 = [[-4.9793,7.0084,23.4296,4.4337,1.7374,1.6647,1.5855,0],[-4.3215,6.9752,38.2180,3.3681,1.6638,1.5606,1.6408,0]]
     mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
 
-    time.sleep(0.5)  # 模拟0.5秒后
-    t2 = int(time.time()*1000)
-    detections_frame2 = [[-5.15, 7.01, 32.41, 10.33, 2.88, 4.03, 1.60, 0]]
-    mot.update(detections_frame2, t2)
+    t1 = int(time.time()*1000)
+    detections_frame1 = [[-4.9799,7.0066,23.4876,4.2820,1.7598,1.6414,1.5678,0],[-4.3315,6.9768,38.1654,3.5486,1.7053,1.5597,1.6191,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    
+    t1 = int(time.time()*1000)
+    detections_frame1 = [[-4.9409,7.0172,23.4819,4.5374,1.8164,1.6706,1.5526,0],[-4.3086,6.9892,38.3463,3.8089,1.7052,1.5637,1.6522,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    t1 = int(time.time()*1000)
 
-    print(mot.pop_best_length_width_height(0))
+    detections_frame1 = [[-4.9998,7.0204,23.3865,4.3963,1.7817,1.6059,1.5674,0],[-4.3539,6.9894,38.3511,3.6046,1.6689,1.5639,1.6327,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    
+    t1 = int(time.time()*1000)
+    detections_frame1 =[[-4.9871,7.0255,23.4278,4.3318,1.7970,1.6862,1.5622,0],[-4.2363,6.9774,38.3099,4.0176,1.6639,1.5271,1.6467,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    
+    t1 = int(time.time()*1000)
+    detections_frame1 =[[-4.9997,7.0289,23.3939,4.3464,1.8784,1.6850,1.5592,0],[-4.3242,6.9925,38.1914,3.7002,1.6784,1.5289,1.6380,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    
+    t1 = int(time.time()*1000)
+    detections_frame1 = [[-4.9620,7.0230,23.3777,4.2339,1.7142,1.6879,1.5631,0],[-4.3255,6.9896,38.2703,3.7798,1.7042,1.5523,1.6491,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+    
+    t1 = int(time.time()*1000)
+    detections_frame1 = [[-4.9910,7.0073,23.4517,4.2428,1.8132,1.6598,1.5668,0],[-4.3490,6.9862,38.0772,3.7178,1.6914,1.5830,1.6356,0]]
+    mot.update(detections_frame1, t1)
+    print( "input: ",detections_frame1)
+    time.sleep(random.uniform(0.2, 0.5)) 
+
+    #print(mot.pop_best_length_width_height(0))

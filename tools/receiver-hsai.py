@@ -116,9 +116,9 @@ def point_cloud_detect():
                     continue
             points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points)  
             result_lines_= '\n'.join(result_lines)
+            print("\n-------------")
             if result_lines_ :
                 print(result_lines_)
-            print("-------------")
             #没检测到也要去更新追踪器
             detections_frame = []
             parts = result_lines_.split()
