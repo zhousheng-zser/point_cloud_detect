@@ -7,6 +7,7 @@ import numpy as np
 import os
 import datetime
 from eval_rcnn import PointCloudConverter
+from draw_meshlab import process_point_cloud_with_3d_boxes
 
 def save_lidar_data_as_pcd(points):
     output_dir = '../detect_clouds'
@@ -53,8 +54,21 @@ def point_cloud_detect():
             zeros_column = np.zeros((latest_points.shape[0], 1))
             latest_points = np.column_stack((latest_points, zeros_column))
             global status_unique_id
-            results,result_lines = PointCloud.eval_one_epoch(latest_points)
-            print(result_lines)
+            points, roads_roi, result_lines, road_list = PointCloud.eval_one_epoch(latest_points)
+
+            #result_lines_temp = result_lines.copy()
+            result_lines_temp=[]
+
+
+            result_lines_temp.append("Car -1 -1 1.5332 0.0000 0.0000 0.0000 0.0000 0.9796 1.7104 1.0112 0.0421 6.9170 40.3884 1.5343 4.3851")
+            result_lines_temp.append("Car -1 -1 1.5306 0.0000 0.0000 0.0000 0.0000 1.5369 1.7112 3.5155 0.2921 6.9347 34.0323 1.5392 6.3560")
+            line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {roads_roi[0][0]:.4f} {roads_roi[0][1]:.4f} {roads_roi[0][2]:.4f} {roads_roi[0][3]:.4f} {roads_roi[0][4]:.4f} {roads_roi[0][5]:.4f} {roads_roi[0][6]:.4f} {10.0:.4f}"
+            result_lines_temp.append(line_roi)
+            results = process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt')
+
+            #results,result_lines = PointCloud.eval_one_epoch(latest_points)
+            result_lines_= '\n'.join(result_lines)
+            print(result_lines_)
             save_lidar_data_as_pcd(results)
             time.sleep(1)
 

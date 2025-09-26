@@ -131,7 +131,7 @@ def save_kitti_format(points, pts_unique, bbox3d, scores, cfg_classes="Car"):
     in_box_list=[]
     for k in range(bbox3d.shape[0]):
         score = float(scores[k])
-        if score < 3 :
+        if score < 2.5 :
             continue
         x, z, ry = float(bbox3d[k, 0]), float(bbox3d[k, 2]), float(bbox3d[k, 6])
         #beta = np.arctan2(z, x)
@@ -173,7 +173,7 @@ def save_kitti_format(points, pts_unique, bbox3d, scores, cfg_classes="Car"):
         road_list.append(road_id)
 
     #标记每个长发体框内的点云   
-    result_mask  = np.zeros(len(points), dtype=bool)
+    result_mask = np.zeros(len(points), dtype=bool)
     for mask in in_box_list:
         result_mask = np.logical_or(result_mask, mask)
 

@@ -114,17 +114,19 @@ def point_cloud_detect():
                 else:
                     time.sleep(0.1)
                     continue
-            points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points)
+            points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points)  
             result_lines_= '\n'.join(result_lines)
             if result_lines_ :
                 print(result_lines_)
-                print("")
-                detections_frame = []
-                parts = result_lines_.split()
-                for i in range(len(parts)//16):
-                    detections_frame.append([float(parts[i*16+13]),float(parts[i*16+11]),float(parts[i*16+12]),
-                                        float(parts[i*16+10]),float(parts[i*16+9]),float(parts[i*16+8]),float(parts[i*16+14]), road_list[i]  ] )
-                mot.update(detections_frame)
+            print("-------------")
+            #没检测到也要去更新追踪器
+            detections_frame = []
+            parts = result_lines_.split()
+            for i in range(len(parts)//16):
+                detections_frame.append([float(parts[i*16+13]),float(parts[i*16+11]),float(parts[i*16+12]),
+                                    float(parts[i*16+10]),float(parts[i*16+9]),float(parts[i*16+8]),float(parts[i*16+14]), road_list[i]  ] )
+            temp_teme =  int(time.time()*1000)  #之后要改为从别的地方获取时间   
+            mot.update(detections_frame, temp_teme)
             
             global status_point_cloud ,status_unique_id
             road_map={
@@ -143,7 +145,8 @@ def point_cloud_detect():
                     result_lines_temp.append(line_roi)
                     results = process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt')
 
-                    length_,width_,height_, centre_length_,centre_width_,centre_height_ = mot.pop_best_length_width_height(id_)
+                    length_,width_,height_, centre_length_,centre_width_,centre_height_,best_speed = mot.pop_best_length_width_height(id_)
+                    print(f"id= {id_}  best_speed = {best_speed}m/s , {best_speed*3.6}km/h") 
                     point_cloud_data = PointCloudDataStruct(unique_id = str(status_unique_id[port]),length=length_, width=width_,height=height_,
                                 centre_length=centre_length_,centre_width=centre_width_,centre_height=centre_height_ ,bin_data = results )
                     send_PointCloud_Data_Interface(point_cloud_data,id_)
