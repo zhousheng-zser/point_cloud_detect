@@ -197,6 +197,37 @@ def process_detection(data, filter_type='Car'):
     df.reset_index(drop=True, inplace=True)
     return df
 
+def save_lidar_data_as_pcd(points):
+    output_dir = '../detect_clouds'
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate timestamp for filename
+    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    filename = f'test_Lidar_{current_time}.pcd'
+    
+    filepath = os.path.join(output_dir, filename)
+    
+    # Prepare PCD header
+    num_points = points.shape[0]
+    header = f"""# .PCD v0.7 - Point Cloud Data file format
+VERSION 0.7
+FIELDS x y z intensity
+SIZE 4 4 4 4
+TYPE F F F F
+COUNT 1 1 1 1
+WIDTH {num_points}
+HEIGHT 1
+VIEWPOINT 0 0 0 1 0 0 0
+POINTS {num_points}
+DATA ascii
+"""
+    
+    # Write to file
+    with open(filepath, 'w') as f:
+        f.write(header)
+        np.savetxt(f, points, fmt='%.6f %.6f %.6f %.6f')
+
 def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/calib.txt'):
     calib = Calibration(calib_path)
     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -274,6 +305,7 @@ def process_point_cloud_with_3d_boxes(points, result_lines, calib_path='./cfgs/c
     #print(f"final_size: {final_size} byte  ({final_size/1024/1024:.2f} MB)")
     points = np.round(points, 3)
     #print(f"test_Lidar_{current_time}.txt")
+    #save_lidar_data_as_pcd(points)
     if len(df) > 1:
         #np.savetxt('../detect_clouds/'+ 'test_Lidar_'+ current_time+'.txt', points, fmt='%.3f')
         pass

@@ -1,3 +1,9 @@
+"""
+用于收费站场景 车速较慢;
+对车辆长宽高精度要求高;
+"""
+
+
 import asyncio
 import time
 import os
@@ -29,7 +35,11 @@ mot = MultiObjectTracker()
 
 def start_lidar():
     try:
-        hsai.init_hsai_lidar_sdk_cplusplus_interface()
+        roll =0                               #翻滚
+        pitch = 24 * 3.141592653589793 / 180  #上下
+        yaw = 10.5 * 3.141592653589793 / 180  #转动
+        lidar_ip_addrwss = "10.31.10.60"      #lidar ip
+        hsai.init_hsai_lidar_sdk_cplusplus_interface(lidar_ip_addrwss,roll,pitch,yaw )
         print("hsai SDK started.")
     except Exception as e:
         print(f"hsai error: {e}")
@@ -68,9 +78,9 @@ DATA ascii
     print(f"Saved point cloud data to {filepath}")
     return filepath
 
-async def column_stack(time_interval_ms = 100):
+async def column_stack(time_interval_ms = 50):
     pc = hsai.get_hsai_lidar_pointcloud_data_interface(time_interval_ms)
-    while (not pc) or (len(pc['points']) < 100000) :
+    while (not pc) or (len(pc['points']) < 50000) :
         time.sleep(time_interval_ms/1000.0)
         pc = hsai.get_hsai_lidar_pointcloud_data_interface(time_interval_ms)
 
@@ -83,7 +93,7 @@ async def column_stack(time_interval_ms = 100):
     return np.vstack(points_list)
 
 async def collect_points_task():
-    time_interval_ms = 100
+    time_interval_ms = 50
     while True:
         try:
             points = await column_stack(time_interval_ms=time_interval_ms)
@@ -114,11 +124,12 @@ def point_cloud_detect():
                 else:
                     time.sleep(0.1)
                     continue
+            ##检测一次平均 650ms
             points,roads_roi, result_lines,road_list = PointCloud.eval_one_epoch(latest_points)  
             result_lines_= '\n'.join(result_lines)
-            print("\n-------------")
             if result_lines_ :
                 print(result_lines_)
+            print()
             #没检测到也要去更新追踪器
             detections_frame = []
             parts = result_lines_.split()
@@ -128,6 +139,13 @@ def point_cloud_detect():
             temp_teme =  int(time.time()*1000)  #之后要改为从别的地方获取时间   
             mot.update(detections_frame, temp_teme)
             
+            #result_lines_= '\n'.join(result_lines)
+            #result_lines_temp=result_lines.copy()##############
+            #for roi in roads_roi:
+            #    line_roi = f"{'Car'} {-1} {-1} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {0.0:.4f} {roi[0]:.4f} {roi[1]:.4f} {roi[2]:.4f} {roi[3]:.4f} {roi[4]:.4f} {roi[5]:.4f} {roi[6]:.4f} {10.0:.4f}"
+            #    result_lines_temp.append(line_roi)
+            ##画图300~600ms
+            #results = process_point_cloud_with_3d_boxes(points, '\n'.join(result_lines_temp), calib_path='./cfgs/calib.txt')####################
             global status_point_cloud ,status_unique_id
             road_map={
                 8991: 0,
